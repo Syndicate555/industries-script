@@ -1,0 +1,8 @@
+node_modules
+companies.csv
+patents.csv
+patents_with_industries.csv
+companies_with_industries.csv
+companies_errors.csv
+patents_errors.csv
+.env
