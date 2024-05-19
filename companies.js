@@ -8,7 +8,8 @@ const { finished } = require('stream/promises');
 const csvParser = require('csv-parser');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+// const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_KEY = process.env.NEW_OPENAI_API_KEY;
 const companiesFilePath = path.join(__dirname, 'unique_companies.txt');
 const industriesFilePath = path.join(__dirname, 'unique_industries.txt');
 const outputFilePath = path.join(__dirname, 'companies_with_industries.csv');
@@ -39,7 +40,7 @@ fs.readFile(industriesFilePath, 'utf8', (err, data) => {
 // Bottleneck to manage API rate limiting
 const limiter = new Bottleneck({
 	maxConcurrent: 1,
-	minTime: 20,
+	minTime: 120,
 });
 
 // Function to call OpenAI API
@@ -65,29 +66,6 @@ async function getIndustryForCompanyGPT(company, industries) {
 		return industry;
 	} catch (error) {
 		console.error('Error calling OpenAI API:', error);
-		return null;
-	}
-}
-
-async function getIndustryForCompanyGEMINI(company, industries) {
-	const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-	const prompt = `
-        Given the following list of industries:
-        ${industries.join(', ')}
-    
-        Determine the industry that best matches the following organization:
-        ${company}
-    
-        Return only the industry name exactly how it appears in the list. Do not return any other information. Return "unknown" if the industry is not in the list.
-    `;
-	try {
-		const result = await limiter.schedule(() => model.generateContent(prompt));
-		const response = await result.response;
-		const industry = response.text().trim().toLowerCase();
-		console.log(`${company}:${industry}`);
-		return industry;
-	} catch (error) {
-		console.error('Error calling CLAUDE API:', error);
 		return null;
 	}
 }
