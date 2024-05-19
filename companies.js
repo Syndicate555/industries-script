@@ -18,10 +18,13 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-const anthropic = new Anthropic({
-	apiKey: process.env.CLAUDE_API_KEY,
-});
+// const anthropic = new Anthropic({
+// 	apiKey: process.env.CLAUDE_API_KEY,
+// });
 
+const anthropic = new Anthropic({
+	apiKey: process.env.NEW_CLAUDE_API_KEY,
+});
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Read industries from file
@@ -40,7 +43,7 @@ fs.readFile(industriesFilePath, 'utf8', (err, data) => {
 // Bottleneck to manage API rate limiting
 const limiter = new Bottleneck({
 	maxConcurrent: 1,
-	minTime: 120,
+	minTime: 2000,
 });
 
 // Function to call OpenAI API
@@ -148,12 +151,8 @@ async function processCompaniesFile() {
 	csvWriterInstance.pipe(output);
 
 	for (const company of newCompanies) {
-		const industry = await getIndustryForCompanyGPT(company, industries);
-		if (industry && industry.toLowerCase() !== 'unknown') {
-			csvWriterInstance.write({ company, industry });
-		} else {
-			errors.push(company);
-		}
+		const industry = await getIndustryForCompanyCLAUDE(company, industries);
+		csvWriterInstance.write({ company, industry });
 	}
 
 	csvWriterInstance.end();
