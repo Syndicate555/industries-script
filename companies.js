@@ -14,7 +14,6 @@ const companiesFilePath = path.join(__dirname, 'unique_companies.txt');
 const industriesFilePath = path.join(__dirname, 'unique_industries.txt');
 const outputFilePath = path.join(__dirname, 'companies_with_industries.csv');
 const errorFilePath = path.join(__dirname, 'companies_errors.txt');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
@@ -25,7 +24,6 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 const anthropic = new Anthropic({
 	apiKey: process.env.NEW_CLAUDE_API_KEY,
 });
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Read industries from file
 let industries = [];
@@ -43,7 +41,7 @@ fs.readFile(industriesFilePath, 'utf8', (err, data) => {
 // Bottleneck to manage API rate limiting
 const limiter = new Bottleneck({
 	maxConcurrent: 1,
-	minTime: 2000,
+	minTime: 1300,
 });
 
 // Function to call OpenAI API
@@ -87,7 +85,7 @@ async function getIndustryForCompanyCLAUDE(company, industries) {
 		const response = await limiter.schedule(() =>
 			anthropic.messages.create({
 				model: 'claude-3-haiku-20240307',
-				max_tokens: 4096,
+				max_tokens: 1024,
 				messages: [
 					{
 						role: 'user',
