@@ -8,43 +8,39 @@ const { finished } = require('stream/promises');
 const csvParser = require('csv-parser');
 const Anthropic = require('@anthropic-ai/sdk');
 
-// const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_API_KEY = process.env.NEW_OPENAI_API_KEY;
-const companiesFilePath = path.join(__dirname, 'unique_companies.txt');
-const industriesFilePath = path.join(__dirname, 'unique_industries.txt');
-const outputFilePath = path.join(__dirname, 'companies_with_industries.csv');
+const allCompaniesFilePath = path.join(__dirname, 'unique_companies.txt');
+const allIndustriesFilePath = path.join(__dirname, 'unique_industries.txt');
+const outputFilePathForExistingCompanies = path.join(
+	__dirname,
+	'companies_with_industries.csv'
+);
 const errorFilePath = path.join(__dirname, 'companies_errors.txt');
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.NEW_CLAUDE_API_KEY });
 
-// const anthropic = new Anthropic({
-// 	apiKey: process.env.CLAUDE_API_KEY,
-// });
+async function readIndustries(filePath) {
+	return new Promise((resolve, reject) => {
+		fs.readFile(filePath, 'utf8', (err, data) => {
+			if (err) {
+				reject(err);
+			} else {
+				const industries = data
+					.split('\n')
+					.map((line) => line.trim())
+					.filter((line) => line.length > 0);
+				resolve(industries);
+			}
+		});
+	});
+}
 
-const anthropic = new Anthropic({
-	apiKey: process.env.NEW_CLAUDE_API_KEY,
-});
-
-// Read industries from file
-let industries = [];
-fs.readFile(industriesFilePath, 'utf8', (err, data) => {
-	if (err) {
-		console.error('Error reading industries file:', err);
-		process.exit(1);
-	}
-	industries = data
-		.split('\n')
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0);
-});
-
-// Bottleneck to manage API rate limiting
 const limiter = new Bottleneck({
 	maxConcurrent: 1,
 	minTime: 1300,
 });
 
-// Function to call OpenAI API
 async function getIndustryForCompanyGPT(company, industries) {
 	const prompt = `
         Given the following list of industries:
@@ -103,57 +99,83 @@ async function getIndustryForCompanyCLAUDE(company, industries) {
 	}
 }
 
-// Function to read existing companies from the CSV file
 async function readExistingCompanies(filePath) {
 	return new Promise((resolve, reject) => {
 		const companies = new Set();
-		fs.createReadStream(filePath)
+
+		const handleError = (error) => {
+			console.error(`Error while reading file ${filePath}:`, error);
+			reject(error);
+		};
+
+		const stream = fs.createReadStream(filePath);
+		stream
+			.on('error', handleError)
 			.pipe(csvParser())
 			.on('data', (row) => {
-				companies.add(row.company);
+				if (row.company) {
+					companies.add(normalizeCompanyName(row.company));
+				}
 			})
 			.on('end', () => {
+				console.log('Finished reading and parsing CSV file.');
 				resolve(companies);
 			})
-			.on('error', (error) => {
-				reject(error);
-			});
+			.on('error', handleError);
 	});
 }
 
-// Process companies and assign industries
+function normalizeCompanyName(companyName) {
+	// Normalize the company name to handle special characters, accents, etc.
+	return companyName.toLowerCase().trim();
+}
+
 async function processCompaniesFile() {
-	const companies = fs
-		.readFileSync(companiesFilePath, 'utf8')
+	const industries = await readIndustries(allIndustriesFilePath);
+
+	const allCompanies = fs
+		.readFileSync(allCompaniesFilePath, 'utf8')
 		.split('\n')
-		.map((line) => line.trim())
+		.map((line) => line.toLowerCase().trim())
 		.filter((line) => line.length > 0);
 
-	const existingCompanies = await readExistingCompanies(outputFilePath);
-	const newCompanies = companies.filter(
+	const existingCompanies = await readExistingCompanies(
+		outputFilePathForExistingCompanies
+	);
+	console.log(existingCompanies.has('Breezer Holdings, LLC'));
+	// fs.writeFile('test2.txt', Array.from(existingCompanies).join('\n'), (err) => {
+	// 	if (err) {
+	// 		console.error(err);
+	// 		return;
+	// 	}
+	// });
+	const newCompanies = allCompanies.filter(
 		(company) => !existingCompanies.has(company)
 	);
-	console.log(newCompanies.length);
+	console.log(`New companies to process: ${newCompanies.length}`);
 	const errors = [];
 
-	const output = fs.createWriteStream(outputFilePath, { flags: 'a' });
+	const fileExists = fs.existsSync(outputFilePathForExistingCompanies);
+	const isEmptyFile = fileExists
+		? fs.statSync(outputFilePathForExistingCompanies).size === 0
+		: true;
+
+	const output = fs.createWriteStream(outputFilePathForExistingCompanies, {
+		flags: 'a',
+	});
 	const csvWriterInstance = csvWriter({
-		headers:
-			!fs.existsSync(outputFilePath) || fs.statSync(outputFilePath).size === 0
-				? ['company', 'industry']
-				: false,
-		sendHeaders:
-			!fs.existsSync(outputFilePath) || fs.statSync(outputFilePath).size === 0,
+		headers: isEmptyFile ? ['company', 'industry'] : false,
+		sendHeaders: isEmptyFile,
 	});
 
 	csvWriterInstance.pipe(output);
 
-	for (const company of newCompanies) {
-		const industry = await getIndustryForCompanyCLAUDE(company, industries);
-		csvWriterInstance.write({ company, industry });
-	}
+	// for (const company of newCompanies) {
+	// 	const industry = await getIndustryForCompanyGPT(company, industries);
+	// 	csvWriterInstance.write({ company, industry });
+	// }
 
-	csvWriterInstance.end();
+	await new Promise((resolve) => csvWriterInstance.end(resolve));
 	await finished(output);
 
 	if (errors.length > 0) {
@@ -164,5 +186,4 @@ async function processCompaniesFile() {
 	console.log('Companies successfully processed');
 }
 
-// Run the process
 processCompaniesFile();
